@@ -67,6 +67,7 @@ import {
   isObsidianExcalidrawPath,
   isObsidianExcalidrawMarkdown
 } from '@shared/excalidraw'
+import { isTodosJsonPath } from '@shared/todo-board'
 import { DEMO_TOUR_ASSETS, DEMO_TOUR_NOTES } from './demo-tour-data'
 
 const CONFIG_FILE = 'zennotes.config.json'
@@ -2169,6 +2170,21 @@ async function isExcalidrawFileEntry(full: string, entry: Dirent): Promise<boole
   return false
 }
 
+// `.todos.json` files are listed alongside notes so they appear in the sidebar
+// and open the TodoBoardView instead of the raw JSON editor.
+async function isTodosJsonFileEntry(full: string, entry: Dirent): Promise<boolean> {
+  if (!isTodosJsonPath(entry.name)) return false
+  if (entry.isFile()) return true
+  if (entry.isSymbolicLink()) {
+    try {
+      return (await fs.stat(full)).isFile()
+    } catch {
+      return false
+    }
+  }
+  return false
+}
+
 async function realpathOrResolve(p: string): Promise<string> {
   try {
     return await fs.realpath(p)
@@ -2535,9 +2551,9 @@ async function readMeta(
     return { ...cached.meta, siblingOrder: resolvedSiblingOrder, isSymlink: linked }
   }
 
-  // Excalidraw drawings are JSON, not Markdown — don't parse their body for
-  // tags/links/excerpt (that would be garbage) or even read it for meta.
-  if (isExcalidrawPath(relPath)) {
+  // Excalidraw drawings and TODOs.json files are JSON, not Markdown — don't
+  // parse their body for tags/links/excerpt or even read it for meta.
+  if (isExcalidrawPath(relPath) || isTodosJsonPath(relPath)) {
     const meta: NoteMeta = {
       path: relPath,
       title: path.basename(abs, path.extname(abs)),
@@ -2699,7 +2715,8 @@ export async function listNotes(root: string): Promise<NoteMeta[]> {
       }
       if (
         (await isMarkdownNoteEntry(full, entry)) ||
-        (await isExcalidrawFileEntry(full, entry))
+        (await isExcalidrawFileEntry(full, entry)) ||
+        (await isTodosJsonFileEntry(full, entry))
       ) {
         noteFiles.push({ full, folder, siblingOrder: index, isSymlink: entry.isSymbolicLink() })
       }

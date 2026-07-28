@@ -52,6 +52,15 @@ func isExcalidrawName(name string) bool {
 	return strings.EqualFold(filepath.Ext(name), excalidrawExt)
 }
 
+// todosJsonSuffix marks a TODOs.json file — the agent-generated task tracking
+// format. Listed alongside notes and opened in the TodoBoardView.
+const todosJsonSuffix = ".todos.json"
+
+// isTodosJsonName reports whether a filename is a TODOs.json file.
+func isTodosJsonName(name string) bool {
+	return strings.HasSuffix(strings.ToLower(name), todosJsonSuffix)
+}
+
 // noteExt returns the on-disk extension for a note-like file, preserving
 // `.excalidraw` for drawings and defaulting to `.md` otherwise. Rename/move/
 // duplicate use it so a drawing never silently becomes a Markdown note.
@@ -723,7 +732,7 @@ func (v *Vault) inferPrimaryNotesLocation() PrimaryNotesLocation {
 		if _, reserved := reservedRootNames[name]; reserved {
 			continue
 		}
-		if entry.IsDir() || strings.EqualFold(filepath.Ext(name), ".md") || isExcalidrawName(name) {
+		if entry.IsDir() || strings.EqualFold(filepath.Ext(name), ".md") || isExcalidrawName(name) || isTodosJsonName(name) {
 			return PrimaryNotesRoot
 		}
 	}
@@ -1023,7 +1032,7 @@ func (v *Vault) ListNotes() ([]NoteMeta, error) {
 					}
 				}
 			}
-			if !strings.EqualFold(filepath.Ext(d.Name()), ".md") && !isExcalidrawName(d.Name()) {
+			if !strings.EqualFold(filepath.Ext(d.Name()), ".md") && !isExcalidrawName(d.Name()) && !isTodosJsonName(d.Name()) {
 				return nil
 			}
 			files = append(files, noteFile{folder: folder, path: path})
@@ -1184,7 +1193,7 @@ func (v *Vault) ListAssets() ([]AssetMeta, error) {
 				}
 				continue
 			}
-			if !entry.Type().IsRegular() || strings.EqualFold(filepath.Ext(name), ".md") || isExcalidrawName(name) {
+			if !entry.Type().IsRegular() || strings.EqualFold(filepath.Ext(name), ".md") || isExcalidrawName(name) || isTodosJsonName(name) {
 				continue
 			}
 			info, err := entry.Info()
@@ -1257,7 +1266,7 @@ func buildNoteMeta(relPosix, title string, folder NoteFolder, info os.FileInfo, 
 		Tags:      []string{},
 		Wikilinks: []string{},
 	}
-	if isExcalidrawName(relPosix) {
+	if isExcalidrawName(relPosix) || isTodosJsonName(relPosix) {
 		return meta
 	}
 	meta.Tags = ExtractTags(bodyStr)

@@ -79,20 +79,22 @@ export function TodoBoardView({ path, paneId }: Props): JSX.Element {
         keymap.of([...searchKeymap, ...historyKeymap, indentWithTab]),
         updateListener,
         EditorView.theme({
-          '&': { backgroundColor: 'transparent', flex: 1, minHeight: 0 },
-          '.cm-scroller': { fontFamily: 'inherit' },
+          '&': { backgroundColor: 'transparent', flex: 1, minHeight: 0, minWidth: 0 },
+          '.cm-scroller': { fontFamily: 'inherit', padding: '0', overflow: 'auto' },
           '.cm-content': {
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             fontSize: '12px',
             lineHeight: '1.65',
-            padding: '16px',
+            padding: '4px 8px',
             maxWidth: 'none',
-            margin: '0'
+            margin: '0',
+            width: '100%',
+            minWidth: '100%'
           },
           '.cm-gutters': {
             backgroundColor: 'transparent',
-            borderRight: '1px solid rgba(0,0,0,0.06)',
-            color: 'rgba(0,0,0,0.25)',
+            borderRight: 'none',
+            color: 'rgba(0,0,0,0.2)',
             fontSize: '11px'
           },
           '.cm-activeLineGutter': { backgroundColor: 'rgba(0,0,0,0.03)' },

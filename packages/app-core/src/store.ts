@@ -25,6 +25,7 @@ import type {
 } from '@shared/ipc'
 import type { VaultTask } from '@shared/tasks'
 import { isExcalidrawPath, isObsidianExcalidrawPath } from '@shared/excalidraw'
+import { isTodosJsonPath } from '@shared/todo-board'
 import { TASKS_TAB_PATH, isTasksTabPath, parseTasksFromBody, toIsoDateLocal } from '@shared/tasks'
 import {
   isTypstPreamblePath,
@@ -5283,7 +5284,7 @@ export const useStore = create<Store>((set, get) => {
     // Excalidraw drawings are notes (they live in the notes tree), so treat
     // their change events as note events, not asset events.
     const pathIsNote =
-      ev.path.toLowerCase().endsWith('.md') || isExcalidrawPath(ev.path)
+      ev.path.toLowerCase().endsWith('.md') || isExcalidrawPath(ev.path) || isTodosJsonPath(ev.path)
     if (ev.scope !== 'vault-settings' && !pathIsNote) {
       await get().refreshAssets()
       return

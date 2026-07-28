@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import type { PaneMode } from '../lib/pane-mode'
 import { paneModeForPath } from '../lib/pane-mode'
@@ -6,12 +6,22 @@ import type { TODOs, TodoTask } from '@shared/todo-board'
 import { todosTitleFromPath } from '@shared/todo-board'
 import { TodoBoardColumn } from './TodoBoardColumn'
 
+import { EditorState, Annotation } from '@codemirror/state'
+import { EditorView, keymap, lineNumbers } from '@codemirror/view'
+import { json } from '@codemirror/lang-json'
+import { vim } from '@replit/codemirror-vim'
+import { history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { searchKeymap } from '@codemirror/search'
+import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
+
 const COLUMNS: Array<{ title: string; status: string }> = [
   { title: 'Pending', status: 'pending' },
   { title: 'In Progress', status: 'partial' },
   { title: 'Completed', status: 'completed' },
   { title: 'Blocked', status: 'blocked' }
 ]
+
+const programmatic = Annotation.define<boolean>()
 
 interface Props {
   path: string
@@ -22,6 +32,11 @@ export function TodoBoardView({ path, paneId }: Props): JSX.Element {
   const [rawJson, setRawJson] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [selectedTask, setSelectedTask] = useState<TodoTask | null>(null)
+  const [editedJson, setEditedJson] = useState<string>('')
+
+  const editorContainerRef = useRef<HTMLDivElement>(null)
+  const cmViewRef = useRef<EditorView | null>(null)
 
   const paneModes = useStore((s) => s.paneModes[paneId])
   const setPaneModeForPath = useStore((s) => s.setPaneModeForPath)
@@ -29,9 +44,12 @@ export function TodoBoardView({ path, paneId }: Props): JSX.Element {
   const readFromDisk = useCallback(async () => {
     try {
       const res = await window.zen.readNote(path)
-      if (res) setRawJson(res.body ?? '')
+      const body = res?.body ?? ''
+      setRawJson(body)
+      setEditedJson(body)
     } catch {
       setRawJson('')
+      setEditedJson('')
     }
   }, [path])
 
@@ -39,6 +57,69 @@ export function TodoBoardView({ path, paneId }: Props): JSX.Element {
     setLoading(true)
     readFromDisk().finally(() => setLoading(false))
   }, [readFromDisk])
+
+  useEffect(() => {
+    if (!editorContainerRef.current) return
+
+    const updateListener = EditorView.updateListener.of((update) => {
+      if (!update.docChanged) return
+      if (update.transactions.some((tr) => tr.annotation(programmatic))) return
+      setEditedJson(update.state.doc.toString())
+    })
+
+    const state = EditorState.create({
+      doc: editedJson,
+      extensions: [
+        json(),
+        vim(),
+        history(),
+        lineNumbers(),
+        EditorView.lineWrapping,
+        syntaxHighlighting(defaultHighlightStyle),
+        keymap.of([...searchKeymap, ...historyKeymap, indentWithTab]),
+        updateListener,
+        EditorView.theme({
+          '&': { backgroundColor: 'transparent' },
+          '.cm-scroller': { fontFamily: 'inherit' },
+          '.cm-content': {
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            fontSize: '12px',
+            lineHeight: '1.65',
+            padding: '16px'
+          },
+          '.cm-gutters': {
+            backgroundColor: 'transparent',
+            borderRight: '1px solid rgba(0,0,0,0.06)',
+            color: 'rgba(0,0,0,0.25)',
+            fontSize: '11px'
+          },
+          '.cm-activeLineGutter': { backgroundColor: 'rgba(0,0,0,0.03)' },
+          '.cm-cursor': { borderLeftColor: 'rgba(0,0,0,0.5)' }
+        })
+      ]
+    })
+
+    const view = new EditorView({ state, parent: editorContainerRef.current })
+    cmViewRef.current = view
+
+    return () => {
+      view.destroy()
+      cmViewRef.current = null
+    }
+    // Only create on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    const view = cmViewRef.current
+    if (!view) return
+    const currentDoc = view.state.doc.toString()
+    if (currentDoc === editedJson) return
+    view.dispatch({
+      changes: { from: 0, to: currentDoc.length, insert: editedJson },
+      annotations: programmatic.of(true)
+    })
+  }, [editedJson])
 
   const handleSync = useCallback(async () => {
     setSyncing(true)
@@ -61,6 +142,12 @@ export function TodoBoardView({ path, paneId }: Props): JSX.Element {
 
   const mode: PaneMode = paneModeForPath(paneModes ?? {}, path)
 
+  useEffect(() => {
+    if (mode !== 'preview') {
+      cmViewRef.current?.requestMeasure()
+    }
+  }, [mode])
+
   const setMode = useCallback(
     (next: PaneMode) => {
       setPaneModeForPath(paneId, path, next)
@@ -78,6 +165,31 @@ export function TodoBoardView({ path, paneId }: Props): JSX.Element {
     }
     return map
   }, [parsed])
+
+  const handleOpenTask = useCallback((task: TodoTask) => {
+    setSelectedTask(task)
+  }, [])
+
+  const handleEditTask = useCallback((task: TodoTask) => {
+    setMode('edit')
+    const taskIdLine = rawJson.indexOf(`"${task.id}"`)
+    if (taskIdLine >= 0) {
+      const before = rawJson.slice(0, taskIdLine)
+      const lineNumber = before.split('\n').length
+      setTimeout(() => {
+        const view = cmViewRef.current
+        if (view) {
+          const line = view.state.doc.line(lineNumber)
+          view.dispatch({
+            selection: { anchor: line.from, head: line.to },
+            scrollIntoView: true,
+            annotations: programmatic.of(true)
+          })
+          view.focus()
+        }
+      }, 100)
+    }
+  }, [rawJson, setMode])
 
   const showEditor = mode !== 'preview'
   const showPreview = mode !== 'edit'
@@ -144,29 +256,22 @@ export function TodoBoardView({ path, paneId }: Props): JSX.Element {
           splitMode ? 'flex flex-row' : 'flex flex-col'
         ].join(' ')}
       >
-        {showEditor && (
-          <div
-            className={[
-              'relative min-h-0 min-w-0',
-              splitMode
-                ? 'flex min-w-0 flex-[1.05] flex-col border-r border-paper-300/70'
-                : 'flex flex-1 flex-col'
-            ].join(' ')}
-          >
-            <textarea
-              value={rawJson}
-              readOnly
-              className="min-h-0 flex-1 resize-none border-0 bg-transparent p-4 font-mono text-xs leading-relaxed text-ink-800 outline-none"
-              spellCheck={false}
-            />
-          </div>
-        )}
+        <div
+          ref={editorContainerRef}
+          className={[
+            'min-h-0 min-w-0',
+            !showEditor && 'hidden',
+            splitMode
+              ? 'flex min-w-0 flex-[1.05] flex-col border-r border-paper-300/70'
+              : 'flex flex-1 flex-col'
+          ].join(' ')}
+        />
 
         {showPreview && (
           <div
             className={[
-              'min-h-0 min-w-0 overflow-y-auto',
-              splitMode ? 'flex min-w-0 flex-1 flex-col bg-paper-50/10' : 'flex-1'
+              'min-h-0 min-w-0 overflow-auto',
+              splitMode ? 'flex min-w-0 flex-1 flex-col bg-paper-50/10' : 'flex flex-1 flex-col'
             ].join(' ')}
           >
             {loading ? (
@@ -185,7 +290,7 @@ export function TodoBoardView({ path, paneId }: Props): JSX.Element {
                 </div>
               </div>
             ) : (
-              <div className="flex min-h-0 flex-1 gap-2 overflow-x-auto p-3">
+              <div className="flex gap-2 p-3">
                 {COLUMNS.map((col) => (
                   <TodoBoardColumn
                     key={col.status}
@@ -193,6 +298,8 @@ export function TodoBoardView({ path, paneId }: Props): JSX.Element {
                     status={col.status}
                     tasks={tasksByStatus.get(col.status) ?? []}
                     count={tasksByStatus.get(col.status)?.length ?? 0}
+                    onOpenTask={handleOpenTask}
+                    onEditTask={handleEditTask}
                   />
                 ))}
               </div>
@@ -200,6 +307,106 @@ export function TodoBoardView({ path, paneId }: Props): JSX.Element {
           </div>
         )}
       </div>
+
+      {selectedTask && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => setSelectedTask(null)}
+        >
+          <div
+            className="mx-4 max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-xl border border-paper-300/70 bg-paper-100 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-paper-300/50 px-5 py-3">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <span className="truncate text-sm font-semibold text-ink-800">
+                  {selectedTask.title}
+                </span>
+                <span className="shrink-0 rounded bg-paper-300/50 px-1.5 py-0.5 font-mono text-2xs text-ink-500">
+                  {selectedTask.id}
+                </span>
+              </div>
+              <button
+                onClick={() => setSelectedTask(null)}
+                className="flex h-6 w-6 items-center justify-center rounded text-ink-400 hover:bg-paper-300/60 hover:text-ink-600"
+              >
+                <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-3.5 w-3.5">
+                  <path d="M3 3l8 8M11 3l-8 8" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-3 px-5 py-4">
+              <div>
+                <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">Summary</span>
+                <p className="mt-1 text-sm leading-relaxed text-ink-700">
+                  {selectedTask.summary}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <div>
+                  <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">Area</span>
+                  <p className="mt-0.5 text-sm font-medium text-ink-700">{selectedTask.area}</p>
+                </div>
+                <div>
+                  <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">Priority</span>
+                  <p className="mt-0.5 text-sm font-medium text-ink-700">{selectedTask.priority}</p>
+                </div>
+                <div>
+                  <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">Status</span>
+                  <p className="mt-0.5 text-sm font-medium text-ink-700">{selectedTask.status}</p>
+                </div>
+                {selectedTask.verification !== 'not_verified' && (
+                  <div>
+                    <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">Verification</span>
+                    <p className="mt-0.5 text-sm font-medium text-accent">{selectedTask.verification}</p>
+                  </div>
+                )}
+              </div>
+
+              {selectedTask.affectedFiles.length > 0 && (
+                <div>
+                  <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">Affected files</span>
+                  <ul className="mt-1 space-y-0.5">
+                    {selectedTask.affectedFiles.map((f, i) => (
+                      <li key={i} className="font-mono text-xs text-ink-600">· {f}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {selectedTask.dependencies.length > 0 && (
+                <div>
+                  <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">Dependencies</span>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {selectedTask.dependencies.map((dep) => (
+                      <span key={dep} className="rounded bg-paper-300/50 px-1.5 py-0.5 font-mono text-2xs text-ink-500">
+                        {dep}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-paper-300/50 px-5 py-3">
+              <button
+                onClick={() => { setSelectedTask(null); handleEditTask(selectedTask) }}
+                className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent-hover"
+              >
+                Edit in JSON
+              </button>
+              <button
+                onClick={() => setSelectedTask(null)}
+                className="rounded-md bg-paper-300/50 px-3 py-1.5 text-xs font-medium text-ink-600 transition-colors hover:bg-paper-300/70"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

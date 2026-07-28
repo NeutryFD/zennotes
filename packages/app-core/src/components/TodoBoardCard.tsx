@@ -3,6 +3,7 @@ import { type TodoTask } from '@shared/todo-board'
 interface TodoBoardCardProps {
   task: TodoTask
   onOpen?: () => void
+  onEdit?: () => void
 }
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -26,7 +27,7 @@ const STATUS_COLORS: Record<string, string> = {
   blocked: 'text-rose-500'
 }
 
-export function TodoBoardCard({ task, onOpen }: TodoBoardCardProps): JSX.Element {
+export function TodoBoardCard({ task, onOpen, onEdit }: TodoBoardCardProps): JSX.Element {
   return (
     <div
       onClick={onOpen}
@@ -39,9 +40,22 @@ export function TodoBoardCard({ task, onOpen }: TodoBoardCardProps): JSX.Element
         <span className="min-w-0 truncate text-xs font-medium text-ink-800">
           {task.title}
         </span>
-        <span className="shrink-0 rounded bg-paper-300/50 px-1.5 py-0.5 font-mono text-2xs text-ink-500">
-          {task.id}
-        </span>
+        <div className="flex shrink-0 items-center gap-1">
+          {onEdit && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onEdit() }}
+              className="flex h-5 w-5 items-center justify-center rounded text-ink-400 opacity-0 transition-opacity hover:bg-paper-300/60 hover:text-ink-600 group-hover:opacity-100"
+              title="Edit task in JSON"
+            >
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" className="h-3 w-3">
+                <path d="M10.5 1.5a1.5 1.5 0 0 1 2 2L4.5 11.5l-3 1 1-3Z" />
+              </svg>
+            </button>
+          )}
+          <span className="rounded bg-paper-300/50 px-1.5 py-0.5 font-mono text-2xs text-ink-500">
+            {task.id}
+          </span>
+        </div>
       </div>
 
       <div className="mt-1.5 text-xs leading-relaxed text-ink-600 line-clamp-2">

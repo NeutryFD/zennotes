@@ -8,6 +8,7 @@ interface TodoBoardColumnProps {
   count: number
   accent?: string
   onOpenTask?: (task: TodoTask) => void
+  onEditTask?: (task: TodoTask) => void
 }
 
 const STATUS_ACCENTS: Record<string, string> = {
@@ -17,10 +18,10 @@ const STATUS_ACCENTS: Record<string, string> = {
   blocked: '#d9788f'
 }
 
-export function TodoBoardColumn({ title, status, tasks, count, accent, onOpenTask }: TodoBoardColumnProps): JSX.Element {
+export function TodoBoardColumn({ title, status, tasks, count, accent, onOpenTask, onEditTask }: TodoBoardColumnProps): JSX.Element {
   const columnAccent = accent ?? STATUS_ACCENTS[status]
   return (
-    <div className="flex w-72 shrink-0 flex-col rounded-lg border border-paper-300/60 bg-paper-100/60">
+    <div className="flex min-w-[250px] flex-1 flex-col rounded-lg border border-paper-300/60 bg-paper-100/60">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-paper-300/45 px-3 py-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {columnAccent && (
@@ -36,7 +37,7 @@ export function TodoBoardColumn({ title, status, tasks, count, accent, onOpenTas
         <span className="shrink-0 text-xs text-ink-400">{count}</span>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+      <div className="p-2">
         {tasks.length === 0 ? (
           <div className="rounded-md border border-dashed border-paper-300/60 px-2 py-3 text-center text-xs text-ink-400">
             no tasks
@@ -48,6 +49,7 @@ export function TodoBoardColumn({ title, status, tasks, count, accent, onOpenTas
                 key={task.id}
                 task={task}
                 onOpen={onOpenTask ? () => onOpenTask(task) : undefined}
+                onEdit={onEditTask ? () => onEditTask(task) : undefined}
               />
             ))}
           </div>

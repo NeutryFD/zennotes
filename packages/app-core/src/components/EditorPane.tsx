@@ -114,6 +114,7 @@ import { TasksView } from './TasksView'
 import { DatabaseView } from './DatabaseView'
 import { LazyExcalidrawView } from './LazyExcalidrawView'
 import { ObsidianExcalidrawPrompt } from './ObsidianExcalidrawPrompt'
+import { TodoBoardView } from './TodoBoardView'
 import { HomeView } from './HomeView'
 import {
   isExcalidrawPath,
@@ -127,6 +128,7 @@ import { TrashView } from './TrashView'
 import { AssetsView } from './AssetsView'
 import { QuickNotesView } from './QuickNotesView'
 import type { MathRenderer } from '@shared/app-config'
+import { isTodosJsonPath } from '@shared/todo-board'
 import { isTasksTabPath } from '@shared/tasks'
 import { isDatabaseTabPath, databaseTitleFromTab, databaseTabPath, isDatabaseCsvPath } from '@shared/databases'
 import { isTagsTabPath } from '@shared/tags'
@@ -3515,6 +3517,8 @@ export function EditorPane({ pane }: { pane: PaneLeaf }): JSX.Element {
             <DatabaseView tabPath={activeTab} isActive={isActive} />
           ) : activeTab && isExcalidrawPath(activeTab) ? (
             <LazyExcalidrawView path={activeTab} />
+          ) : activeTab && isTodosJsonPath(activeTab) ? (
+            <TodoBoardView path={activeTab} paneId={paneId} />
           ) : activeTab &&
             content &&
             (isObsidianExcalidrawPath(activeTab) ||

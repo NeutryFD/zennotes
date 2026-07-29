@@ -15,7 +15,8 @@ const STATUS_ACCENTS: Record<string, string> = {
   pending: '#e0a34a',
   partial: '#57a55a',
   completed: '#4a9ec0',
-  blocked: '#d9788f'
+  blocked: '#d9788f',
+  rejected: '#a0a0a0'
 }
 
 export function TodoBoardColumn({ title, status, tasks, count, accent, onOpenTask, onEditTask }: TodoBoardColumnProps): JSX.Element {

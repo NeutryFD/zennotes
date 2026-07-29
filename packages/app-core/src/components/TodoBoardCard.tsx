@@ -24,7 +24,8 @@ const STATUS_COLORS: Record<string, string> = {
   pending: 'text-ink-600',
   partial: 'text-amber-500',
   completed: 'text-green-500',
-  blocked: 'text-rose-500'
+  blocked: 'text-rose-500',
+  rejected: 'text-gray-400'
 }
 
 export function TodoBoardCard({ task, onOpen, onEdit }: TodoBoardCardProps): JSX.Element {

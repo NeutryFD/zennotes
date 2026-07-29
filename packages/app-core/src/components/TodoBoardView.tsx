@@ -18,7 +18,8 @@ const COLUMNS: Array<{ title: string; status: string }> = [
   { title: 'Pending', status: 'pending' },
   { title: 'In Progress', status: 'partial' },
   { title: 'Completed', status: 'completed' },
-  { title: 'Blocked', status: 'blocked' }
+  { title: 'Blocked', status: 'blocked' },
+  { title: 'Rejected', status: 'rejected' }
 ]
 
 const programmatic = Annotation.define<boolean>()

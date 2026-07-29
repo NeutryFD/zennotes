@@ -11,7 +11,7 @@ export function todosTitleFromPath(path: string): string {
     : base
 }
 
-export type TaskStatus = 'pending' | 'partial' | 'completed' | 'blocked'
+export type TaskStatus = 'pending' | 'partial' | 'completed' | 'blocked' | 'rejected'
 export type TaskPriority = 'critical' | 'high' | 'medium' | 'low'
 export type VerificationState =
   | 'not_verified'
@@ -55,6 +55,7 @@ export interface StatusDefinitions {
   partial: string
   completed: string
   blocked: string
+  rejected: string
 }
 
 export interface TODOs {

@@ -1,0 +1,335 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "name": "tekniker",
+    "description": "Kubernetes and Kubeflow platform governance",
+    "repository": "/home/lsantos/workspace/tekniker",
+    "documentation": ["README.md"]
+  },
+  "source": {
+    "document": "Gobernanza Kubeflow",
+    "date": "2026-07-14"
+  },
+  "lastUpdated": "2026-07-28",
+  "statusDefinitions": {
+    "pending": "Not implemented.",
+    "partial": "Implementation exists but has gaps or is not live-verified.",
+    "completed": "Implemented; verification state specifies the confidence level.",
+    "blocked": "Cannot proceed until an external decision or dependency is resolved.",
+    "rejected": "Considered but decided not to implement."
+  },
+  "tasks": [
+    {
+      "id": "rotate-exposed-credentials",
+      "area": "security",
+      "title": "Rotate and remove exposed credentials",
+      "priority": "critical",
+      "status": "blocked",
+      "dependencies": [],
+      "summary": "Deferred: this cluster does not currently use a secret manager.",
+      "affectedFiles": ["apps/registry/harbor/values.yaml", "apps/monitoring/monk8s/visualization/grafana/values.yaml"],
+      "verification": "not_verified",
+      "blockedReason": "No approved secret-management solution is available in the cluster."
+    },
+    {
+      "id": "argocd-installation",
+      "area": "operations",
+      "title": "Install Argo CD",
+      "priority": "medium",
+      "status": "completed",
+      "dependencies": [],
+      "summary": "Legacy project notes report Argo CD as installed; governance Applications still need to be tracked.",
+      "affectedFiles": [],
+      "verification": "user_reported"
+    },
+    {
+      "id": "ldap-uid-gid-container",
+      "area": "identity",
+      "title": "Create LDAP UID and GID lookup container",
+      "priority": "medium",
+      "status": "completed",
+      "dependencies": [],
+      "summary": "Legacy project notes report this container as created; image, deployment, and verification evidence must be located.",
+      "affectedFiles": [],
+      "verification": "user_reported"
+    },
+    {
+      "id": "gpu-mig-layout",
+      "area": "gpu",
+      "title": "Configure and verify H100 MIG layout",
+      "priority": "high",
+      "status": "completed",
+      "dependencies": [],
+      "summary": "Verified live on kw01: H100-01 exposes two 3g.47gb instances and H100-02 exposes three 1g.12gb and two 2g.24gb instances; full GPUs are not allocatable.",
+      "affectedFiles": ["apps/nvidia/gpu-operator/values.yaml", "apps/nvidia/README.md"],
+      "verification": "live_cluster_verified",
+      "verifiedAt": "2026-07-28",
+      "verificationEvidence": [
+        "kw01 labels: nvidia.com/mig.config=tekniker-h100-mig and nvidia.com/mig.config.state=success",
+        "kw01 allocatable resources: mig-1g.12gb=3, mig-2g.24gb=2, mig-3g.47gb=2, gpu=0",
+        "nvidia-mig-manager and nvidia-device-plugin pods are Running on kw01"
+      ]
+    },
+    {
+      "id": "namespace-provisioning-decision",
+      "area": "operations",
+      "title": "Use kubeflow-governance for namespace resource management",
+      "priority": "medium",
+      "status": "completed",
+      "dependencies": ["argocd-installation"],
+      "summary": "User and project namespace resources are managed through the kubeflow-governance Helm chart and separate administrator scripts.",
+      "affectedFiles": ["apps/kubeflow/tweaks-tekniker/kubeflow-governance", "README.md"],
+      "verification": "helm_lint_validated",
+      "verifiedAt": "2026-07-28",
+      "commit": "3f3ac7d9"
+    },
+    {
+      "id": "storage-governance",
+      "area": "storage",
+      "title": "Document user NFS storage governance",
+      "priority": "medium",
+      "status": "completed",
+      "dependencies": [],
+      "summary": "Each hpc-user namespace receives a dedicated 20Gi RWX NFS PV and PVC, mounted at /home/<username>/nfs; PVs use Retain reclaim policy. Project storage remains part of the separate project workflow.",
+      "affectedFiles": ["apps/kubeflow/tweaks-tekniker/kubeflow-governance/templates/pv.yaml", "apps/kubeflow/tweaks-tekniker/kubeflow-governance/templates/pvc.yaml", "apps/kubeflow/tweaks-tekniker/kubeflow-governance/templates/poddefault.yaml"],
+      "verification": "live_cluster_verified",
+      "verifiedAt": "2026-07-28",
+      "verificationEvidence": [
+        "hpc-user-test-doitnow has a Bound 20Gi RWX NFS PVC.",
+        "hpc-user-test-doitnow-nfs-pv has Retain reclaim policy."
+      ]
+    },
+    {
+      "id": "harbor-project-governance",
+      "area": "registry",
+      "title": "Provision Harbor projects and access controls",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": ["rotate-exposed-credentials"],
+      "summary": "Create Harbor projects, LDAP or Dex membership rules, robot accounts, and promotion controls.",
+      "affectedFiles": ["apps/registry/harbor/values.yaml", "apps/registry/harbor/README.md"],
+      "verification": "not_verified"
+    },
+    {
+      "id": "harbor-base-images-and-scanning",
+      "area": "registry",
+      "title": "Maintain base images and vulnerability promotion rules",
+      "priority": "medium",
+      "status": "partial",
+      "dependencies": ["harbor-project-governance"],
+      "summary": "Custom notebook images are version-pinned and Trivy storage exists; define the hpc-base portfolio, scan policy, and promotion gate.",
+      "affectedFiles": ["apps/kubeflow/tweaks-tekniker/custom-images/notebooks", "apps/registry/harbor/values.yaml"],
+      "verification": "repository_evidence"
+    },
+    {
+      "id": "harbor-retention",
+      "area": "registry",
+      "title": "Configure Harbor retention policies",
+      "priority": "medium",
+      "status": "pending",
+      "dependencies": ["harbor-project-governance"],
+      "summary": "Retain stable and promoted images while cleaning temporary and unused images.",
+      "affectedFiles": ["apps/registry/harbor"],
+      "verification": "not_verified"
+    },
+    {
+      "id": "ldap-sssd-configuration",
+      "area": "identity",
+      "title": "Package LDAP SSSD configuration for user environments",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": ["rotate-exposed-credentials", "ldap-uid-gid-container"],
+      "summary": "Create secure SSSD configuration with approved secret injection, logging, and no plaintext bind credentials.",
+      "affectedFiles": [],
+      "verification": "not_verified"
+    },
+    {
+      "id": "ldap-uid-gid-image",
+      "area": "identity",
+      "title": "Publish and verify LDAP UID/GID image",
+      "priority": "medium",
+      "status": "pending",
+      "dependencies": ["ldap-sssd-configuration", "harbor-project-governance"],
+      "summary": "Publish the LDAP UID/GID image to Harbor and verify UID, GID, and SSSD log behavior.",
+      "affectedFiles": [],
+      "verification": "not_verified"
+    },
+    {
+      "id": "namespace-default-quotas",
+      "area": "namespaces",
+      "title": "Apply governance ResourceQuotas",
+      "priority": "high",
+      "status": "completed",
+      "dependencies": ["namespace-provisioning-decision"],
+      "summary": "User and project quota defaults are configured. Storage is temporarily set to 50Gi for testing so a 20Gi NFS PVC and a 10Gi NVMe workspace PVC can coexist.",
+      "affectedFiles": ["apps/kubeflow/tweaks-tekniker/kubeflow-governance/values.yaml"],
+      "verification": "live_cluster_verified",
+      "verifiedAt": "2026-07-28",
+      "verificationEvidence": [
+        "hpc-user-test-doitnow ResourceQuota has requests.cpu=16, limits.cpu=32, requests.memory=64Gi, limits.memory=128Gi, persistentvolumeclaims=4, pods=10, and requests.storage=50Gi.",
+        "The active namespace has a Bound 20Gi NFS PVC and a Bound 10Gi longhorn-nvme-gpu workspace PVC."
+      ],
+      "reviewAfter": "2026-08-31"
+    },
+    {
+      "id": "namespace-project-workflow",
+      "area": "namespaces",
+      "title": "Create approved project namespace workflow",
+      "priority": "high",
+      "status": "completed",
+      "dependencies": ["namespace-default-quotas"],
+      "summary": "new-project.sh validates the owner and contributors in LDAP, then renders a Kubeflow Profile, quota, Kubeflow contributor RoleBindings, and contributor Istio AuthorizationPolicies for administrator review and Argo CD sync. The Profile syncs first so its namespace exists before namespaced contributor resources.",
+      "affectedFiles": ["apps/kubeflow/tweaks-tekniker/kubeflow-governance/README.md", "apps/kubeflow/tweaks-tekniker/kubeflow-governance/scripts/new-project.sh", "apps/kubeflow/tweaks-tekniker/kubeflow-governance/templates/project-namespace.yaml", "apps/kubeflow/tweaks-tekniker/kubeflow-governance/templates/project-rolebinding.yaml", "apps/kubeflow/tweaks-tekniker/kubeflow-governance/templates/project-authorizationpolicy.yaml"],
+      "verification": "rendered_client_validated",
+      "verifiedAt": "2026-07-28",
+      "verificationEvidence": [
+        "new-project.sh rendered Profile hpc-project-h117 with test-doitnow as owner and test2-doitnow as contributor.",
+        "The chart passed Helm lint after rendering the Profile, contributor RoleBinding, and contributor AuthorizationPolicy."
+      ],
+      "commit": "3f3ac7d9"
+    },
+    {
+      "id": "harbor-pull-identities",
+      "area": "registry",
+      "title": "Create working per-namespace Harbor pull identities",
+      "priority": "high",
+      "status": "partial",
+      "dependencies": ["rotate-exposed-credentials", "harbor-project-governance"],
+      "summary": "Fix per-namespace robot accounts and pull secrets: use valid credentials, one Harbor hostname, and attach secrets to workloads.",
+      "affectedFiles": ["apps/kubeflow/tweaks-tekniker/kubeflow-governance/templates/imagepullsecret.yaml", "apps/kubeflow/tweaks-tekniker/kubeflow-governance/values.yaml"],
+      "verification": "repository_evidence"
+    },
+    {
+      "id": "namespace-user-template",
+      "area": "namespaces",
+      "title": "Provision user namespaces",
+      "priority": "high",
+      "status": "partial",
+      "dependencies": ["namespace-default-quotas", "storage-governance", "harbor-pull-identities", "ldap-uid-gid-image"],
+      "summary": "Complete hpc-user namespace provisioning with Profile, RBAC, quota, storage, identity, and working Harbor pull access.",
+      "affectedFiles": ["apps/kubeflow/tweaks-tekniker/kubeflow-governance/templates/_helpers.tpl", "apps/kubeflow/tweaks-tekniker/kubeflow-governance/templates/profile.yaml", "apps/kubeflow/tweaks-tekniker/kubeflow-governance/templates/rolebinding.yaml"],
+      "verification": "repository_evidence"
+    },
+    {
+      "id": "admission-policy-coverage",
+      "area": "policy-enforcement",
+      "title": "Complete Kyverno governance policy coverage",
+      "priority": "high",
+      "status": "partial",
+      "dependencies": ["argocd-installation"],
+      "summary": "Kyverno GPU policies exist; add namespace, quota, scheduling, Harbor registry, tag, signature, and digest enforcement.",
+      "affectedFiles": ["apps/kynervo/values.yaml", "apps/kynervo/kubeflow-gpu-user-policy.yaml", "apps/kynervo/kubeflow-gpu-project-policy.yaml"],
+      "verification": "repository_evidence"
+    },
+    {
+      "id": "kubeflow-login-access-gate",
+      "area": "access-control",
+      "title": "Restrict Kubeflow login to provisioned users",
+      "priority": "low",
+      "status": "pending",
+      "dependencies": ["namespace-user-template", "admission-policy-coverage"],
+      "summary": "Require an LDAP group managed with user provisioning and enforce it at Dex and Istio ingress so LDAP users without a Kubeflow user namespace cannot access Kubeflow.",
+      "affectedFiles": ["apps/kubeflow/overlays/tekniker/dex-ldap/patches/config-map.yaml", "apps/kubeflow/overlays/tekniker/istio-install"],
+      "verification": "not_verified"
+    },
+    {
+      "id": "gpu-tenant-and-mps-decision",
+      "area": "scheduling",
+      "title": "Decide GPU tenant scheduling and MPS use",
+      "priority": "medium",
+      "status": "pending",
+      "dependencies": ["gpu-mig-layout", "admission-policy-coverage"],
+      "summary": "Decide tenant scheduling design and MPS use; Kueue MIG ResourceFlavor configuration is currently commented out.",
+      "affectedFiles": ["apps/kueue/values.yaml"],
+      "verification": "not_verified"
+    },
+    {
+      "id": "gpu-user-policy",
+      "area": "gpu",
+      "title": "Enforce user MIG restrictions",
+      "priority": "high",
+      "status": "partial",
+      "dependencies": ["gpu-mig-layout", "admission-policy-coverage"],
+      "summary": "Harden the user GPU policy with a MIG allow-list and complete container coverage.",
+      "affectedFiles": ["apps/kynervo/kubeflow-gpu-user-policy.yaml"],
+      "verification": "repository_evidence"
+    },
+    {
+      "id": "gpu-project-policy",
+      "area": "gpu",
+      "title": "Enforce approved project 3g MIG access",
+      "priority": "high",
+      "status": "partial",
+      "dependencies": ["gpu-mig-layout", "admission-policy-coverage"],
+      "summary": "Replace unprotected namespace-label authorization with human administrator approval and complete resource/container coverage.",
+      "affectedFiles": ["apps/kynervo/kubeflow-gpu-project-policy.yaml"],
+      "verification": "repository_evidence"
+    },
+    {
+      "id": "workload-placement",
+      "area": "scheduling",
+      "title": "Enforce CPU and GPU node placement",
+      "priority": "high",
+      "status": "partial",
+      "dependencies": ["gpu-mig-layout", "gpu-tenant-and-mps-decision", "admission-policy-coverage"],
+      "summary": "Enforce GPU workloads on kw01 and CPU notebooks, general workloads, and Kubeflow services on CPU nodes as required.",
+      "affectedFiles": ["infra/02-ansible/kubespray-2.28.1/inventory/tekniker/inventory.yaml", "apps/kynervo/kubeflow-gpu-user-policy.yaml", "apps/kynervo/kubeflow-gpu-project-policy.yaml"],
+      "verification": "repository_evidence"
+    },
+    {
+      "id": "harbor-image-policy",
+      "area": "registry",
+      "title": "Enforce Harbor-only immutable signed images",
+      "priority": "high",
+      "status": "partial",
+      "dependencies": ["harbor-project-governance", "harbor-base-images-and-scanning", "admission-policy-coverage"],
+      "summary": "Enforce Harbor-only images with explicit immutable tags or digests and signature verification.",
+      "affectedFiles": ["apps/kubeflow/overlays/tekniker/notebook-dashboard/configs/spawner_ui_config.yaml"],
+      "verification": "repository_evidence"
+    },
+    {
+      "id": "notebook-ui-governance",
+      "area": "kubeflow",
+      "title": "Restrict Notebook UI image and MIG choices",
+      "priority": "medium",
+      "status": "partial",
+      "dependencies": ["gpu-user-policy", "harbor-image-policy"],
+      "summary": "The UI already lists versioned Harbor images and one lightweight MIG slice; align it with final policies and project access.",
+      "affectedFiles": ["apps/kubeflow/overlays/tekniker/notebook-dashboard/configs/spawner_ui_config.yaml"],
+      "verification": "repository_evidence"
+    },
+    {
+      "id": "admission-policy-tests",
+      "area": "policy-enforcement",
+      "title": "Add automated governance policy tests",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": ["admission-policy-coverage", "gpu-user-policy", "gpu-project-policy", "workload-placement", "harbor-image-policy"],
+      "summary": "Add rejection tests for GPU, approval, placement, registry, tag, signature, and update policies.",
+      "affectedFiles": ["apps/kynervo"],
+      "verification": "not_verified"
+    },
+    {
+      "id": "governance-observability",
+      "area": "observability",
+      "title": "Monitor governance compliance and resource consumption",
+      "priority": "medium",
+      "status": "partial",
+      "dependencies": ["admission-policy-tests"],
+      "summary": "GPU metrics and dashboards exist; add quota, policy-denial, image-provenance, and approval-audit monitoring.",
+      "affectedFiles": ["apps/monitoring/monk8s/scraping/prometheus/config/configmap.yaml", "apps/monitoring/monk8s/visualization/grafana/values.yaml"],
+      "verification": "repository_evidence"
+    },
+    {
+      "id": "kubernetes-dashboard",
+      "area": "operations",
+      "title": "Deploy Kubernetes Dashboard",
+      "priority": "low",
+      "status": "rejected",
+      "dependencies": [],
+      "summary": "Evaluated Kubernetes Dashboard for cluster observability but decided against it — existing Grafana + Prometheus stack covers all needs without adding another service account and exposure surface.",
+      "affectedFiles": [],
+      "verification": "not_verified"
+    }
+  ]
+}

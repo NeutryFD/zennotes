@@ -6,13 +6,32 @@ import type { TODOs, TodoTask } from '@shared/todo-board'
 import { todosTitleFromPath } from '@shared/todo-board'
 import { TodoBoardColumn } from './TodoBoardColumn'
 
-import { EditorState, Annotation } from '@codemirror/state'
-import { EditorView, keymap, lineNumbers } from '@codemirror/view'
+import { Annotation, Compartment, EditorState, StateEffect, type Extension } from '@codemirror/state'
+import {
+  drawSelection,
+  EditorView,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  keymap,
+  lineNumbers
+} from '@codemirror/view'
 import { json } from '@codemirror/lang-json'
-import { vim } from '@replit/codemirror-vim'
-import { history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { Vim, getCM, vim } from '@replit/codemirror-vim'
+import {
+  history,
+  historyKeymap,
+  indentWithTab,
+  moveLineDown,
+  moveLineUp
+} from '@codemirror/commands'
 import { searchKeymap } from '@codemirror/search'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
+import { vimAwareDefaultKeymap } from '../lib/cm-vim-default-keymap'
+import { toCodeMirrorKey, vimHalfPageKeymap } from '../lib/vim-half-page-keymap'
+import { scrollOff } from '../lib/cm-scrolloff'
+import { completionKeymapForEditor } from '../lib/cm-completion-nav'
+import { getKeymapBinding, type KeymapOverrides } from '../lib/keymaps'
+import type { LineNumberMode } from '../store'
 
 const COLUMNS: Array<{ title: string; status: string }> = [
   { title: 'Pending', status: 'pending' },
@@ -24,9 +43,53 @@ const COLUMNS: Array<{ title: string; status: string }> = [
 
 const programmatic = Annotation.define<boolean>()
 
+const SAVE_DEBOUNCE_MS = 700
+
 interface Props {
   path: string
   paneId: string
+}
+
+function lineNumberExtension(mode: LineNumberMode): Extension {
+  if (mode === 'off') return []
+  return [
+    lineNumbers({
+      formatNumber: (lineNo, state) => {
+        if (mode === 'absolute') return String(lineNo)
+        const activeLine = state.doc.lineAt(state.selection.main.head).number
+        return lineNo === activeLine ? String(lineNo) : String(Math.abs(lineNo - activeLine))
+      }
+    }),
+    highlightActiveLineGutter()
+  ]
+}
+
+function buildEditorKeymap(vimMode: boolean, overrides: KeymapOverrides): Extension {
+  return keymap.of([
+    {
+      key: 'Mod-f',
+      run: () => {
+        const state = useStore.getState()
+        if (state.vimMode) return false
+        state.setSearchOpen(true)
+        return true
+      }
+    },
+    {
+      key: toCodeMirrorKey(getKeymapBinding(overrides, 'editor.moveLineUp')),
+      run: moveLineUp
+    },
+    {
+      key: toCodeMirrorKey(getKeymapBinding(overrides, 'editor.moveLineDown')),
+      run: moveLineDown
+    },
+    ...vimHalfPageKeymap(vimMode, overrides),
+    indentWithTab,
+    ...vimAwareDefaultKeymap(vimMode),
+    ...historyKeymap,
+    ...searchKeymap,
+    ...completionKeymapForEditor
+  ])
 }
 
 export function TodoBoardView({ path, paneId }: Props): JSX.Element {
@@ -38,9 +101,55 @@ export function TodoBoardView({ path, paneId }: Props): JSX.Element {
 
   const editorContainerRef = useRef<HTMLDivElement>(null)
   const cmViewRef = useRef<EditorView | null>(null)
+  const latestDocRef = useRef<string>('')
+  const lastSavedRef = useRef<string>('')
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pathRef = useRef(path)
+  pathRef.current = path
+
+  const vimCompartmentRef = useRef(new Compartment())
+  const keymapCompartmentRef = useRef(new Compartment())
+  const wordWrapCompartmentRef = useRef(new Compartment())
+  const lineNumberCompartmentRef = useRef(new Compartment())
+  const drawSelectionCompartmentRef = useRef(new Compartment())
+  const scrollOffCompartmentRef = useRef(new Compartment())
 
   const paneModes = useStore((s) => s.paneModes[paneId])
   const setPaneModeForPath = useStore((s) => s.setPaneModeForPath)
+  const setEditorViewRef = useStore((s) => s.setEditorViewRef)
+  const activePaneId = useStore((s) => s.activePaneId)
+  const vimMode = useStore((s) => s.vimMode)
+  const keymapOverrides = useStore((s) => s.keymapOverrides)
+  const wordWrap = useStore((s) => s.wordWrap)
+  const lineNumberMode = useStore((s) => s.lineNumberMode)
+  const cursorBlink = useStore((s) => s.cursorBlink)
+  const editorScrollOff = useStore((s) => s.editorScrollOff)
+
+  const writeDoc = useCallback((savePath: string): void => {
+    const doc = latestDocRef.current
+    if (doc === lastSavedRef.current) return
+    lastSavedRef.current = doc
+    void window.zen.writeNote(savePath, doc)
+  }, [])
+
+  const flushPendingSave = useCallback(
+    (savePath: string = pathRef.current): void => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
+      }
+      writeDoc(savePath)
+    },
+    [writeDoc]
+  )
+
+  const scheduleSave = useCallback((): void => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null
+      writeDoc(pathRef.current)
+    }, SAVE_DEBOUNCE_MS)
+  }, [writeDoc])
 
   const readFromDisk = useCallback(async () => {
     try {
@@ -57,7 +166,10 @@ export function TodoBoardView({ path, paneId }: Props): JSX.Element {
   useEffect(() => {
     setLoading(true)
     readFromDisk().finally(() => setLoading(false))
-  }, [readFromDisk])
+    return () => {
+      flushPendingSave(path)
+    }
+  }, [readFromDisk, flushPendingSave, path])
 
   useEffect(() => {
     if (!editorContainerRef.current) return
@@ -65,20 +177,41 @@ export function TodoBoardView({ path, paneId }: Props): JSX.Element {
     const updateListener = EditorView.updateListener.of((update) => {
       if (!update.docChanged) return
       if (update.transactions.some((tr) => tr.annotation(programmatic))) return
-      setEditedJson(update.state.doc.toString())
+      const doc = update.state.doc.toString()
+      setEditedJson(doc)
+      latestDocRef.current = doc
+      scheduleSave()
     })
 
     const state = EditorState.create({
       doc: editedJson,
       extensions: [
         json(),
-        vim(),
+        vimCompartmentRef.current.of(vimMode ? vim() : []),
         history(),
-        lineNumbers(),
-        EditorView.lineWrapping,
+        drawSelectionCompartmentRef.current.of(
+          drawSelection({ cursorBlinkRate: cursorBlink ? 1200 : 0 })
+        ),
+        highlightActiveLine(),
+        wordWrapCompartmentRef.current.of(wordWrap ? EditorView.lineWrapping : []),
+        scrollOffCompartmentRef.current.of(scrollOff(editorScrollOff)),
+        lineNumberCompartmentRef.current.of(lineNumberExtension(lineNumberMode)),
+        keymapCompartmentRef.current.of(buildEditorKeymap(vimMode, keymapOverrides)),
         syntaxHighlighting(defaultHighlightStyle),
-        keymap.of([...searchKeymap, ...historyKeymap, indentWithTab]),
         updateListener,
+        EditorView.domEventHandlers({
+          keydown: (event, view) => {
+            if (event.key !== 'Escape') return false
+            const state = useStore.getState()
+            if (!state.vimMode) return false
+            const cm = getCM(view)
+            if (!cm?.state.vim?.insertMode) return false
+            event.preventDefault()
+            event.stopPropagation()
+            Vim.exitInsertMode(cm as Parameters<typeof Vim.exitInsertMode>[0], true)
+            return true
+          }
+        }),
         EditorView.theme({
           '&': { backgroundColor: 'transparent', flex: 1, minHeight: 0, minWidth: 0 },
           '.cm-scroller': { fontFamily: 'inherit', padding: '0', overflow: 'auto' },
@@ -126,11 +259,68 @@ export function TodoBoardView({ path, paneId }: Props): JSX.Element {
     })
   }, [editedJson])
 
+  useEffect(() => {
+    const view = cmViewRef.current
+    if (!view) return
+    const effects: Array<StateEffect<unknown>> = [
+      vimCompartmentRef.current.reconfigure(vimMode ? vim() : []),
+      keymapCompartmentRef.current.reconfigure(buildEditorKeymap(vimMode, keymapOverrides))
+    ]
+    view.dispatch({ effects })
+  }, [vimMode, keymapOverrides])
+
+  useEffect(() => {
+    const view = cmViewRef.current
+    if (!view) return
+    view.dispatch({
+      effects: wordWrapCompartmentRef.current.reconfigure(wordWrap ? EditorView.lineWrapping : [])
+    })
+  }, [wordWrap])
+
+  useEffect(() => {
+    const view = cmViewRef.current
+    if (!view) return
+    view.dispatch({
+      effects: lineNumberCompartmentRef.current.reconfigure(lineNumberExtension(lineNumberMode))
+    })
+  }, [lineNumberMode])
+
+  useEffect(() => {
+    const view = cmViewRef.current
+    if (!view) return
+    view.dispatch({
+      effects: drawSelectionCompartmentRef.current.reconfigure(
+        drawSelection({ cursorBlinkRate: cursorBlink ? 1200 : 0 })
+      )
+    })
+  }, [cursorBlink])
+
+  useEffect(() => {
+    const view = cmViewRef.current
+    if (!view) return
+    view.dispatch({
+      effects: scrollOffCompartmentRef.current.reconfigure(scrollOff(editorScrollOff))
+    })
+  }, [editorScrollOff])
+
+  const isActivePane = activePaneId === paneId
+
+  useEffect(() => {
+    const view = cmViewRef.current
+    if (!view) return
+    if (isActivePane) {
+      setEditorViewRef(view)
+      return
+    }
+    if (useStore.getState().editorViewRef === view) setEditorViewRef(null)
+  }, [isActivePane, setEditorViewRef])
+
   const handleSync = useCallback(async () => {
+    flushPendingSave()
     setSyncing(true)
     await readFromDisk()
     setSyncing(false)
-  }, [readFromDisk])
+  }, [flushPendingSave, readFromDisk])
 
   const parsed = useMemo<{ ok: true; data: TODOs } | { ok: false; error: string }>(() => {
     if (!rawJson) return { ok: false, error: 'No content' }

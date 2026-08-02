@@ -9,6 +9,7 @@ OPEN_BROWSER := $(shell command -v open 2>/dev/null || command -v xdg-open 2>/de
 
 .PHONY: help install dev desktop web-dev server-dev web-stack \
 	build desktop-build web-build server-build \
+	desktop-dist-deb desktop-dist-pacman \
 	up down restart logs status open rebuild nuke clean
 
 help:
@@ -25,6 +26,8 @@ help:
 	@echo "  Local builds"
 	@echo "    make build        — build the full monorepo"
 	@echo "    make desktop-build — build the Electron desktop app"
+	@echo "    make desktop-dist-deb — package the desktop app for Ubuntu/Debian (.deb)"
+	@echo "    make desktop-dist-pacman — package the desktop app for Arch (.pkg.tar.zst)"
 	@echo "    make web-build    — build apps/web"
 	@echo "    make server-build — build apps/server with the latest embedded web bundle"
 	@echo ""
@@ -67,6 +70,12 @@ build:
 
 desktop-build:
 	npm run build --workspace @zennotes/desktop
+
+desktop-dist-deb:
+	npm run dist:deb --workspace @zennotes/desktop
+
+desktop-dist-pacman:
+	npm run dist:pacman --workspace @zennotes/desktop
 
 web-build:
 	npm run build --workspace @zennotes/web
